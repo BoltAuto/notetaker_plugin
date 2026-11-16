@@ -1,0 +1,7 @@
+{
+  "name": "workassistant",
+  "owner": {"name": "BoltAuto"},
+  "plugins": [
+    {"name": "workassistant", "source": "./plugins/workassistant", "description": "Sync Claude Meetings into workAssistant"}
+  ]
+}
