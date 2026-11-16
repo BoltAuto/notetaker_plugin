@@ -62,7 +62,7 @@ app knows comes back with a `status`; unknown ones are left out.
 - `deleted` → never upload; report "deleted in workAssistant, not uploaded".
 - `recording` → an upload is still in progress or stopped halfway; report "import in progress, retried on a later
   sync" and skip it.
-- `sorting`, `done`, `failed` → already there; report "already there" (for `failed`, add "use Retry in the web app").
+- Any other status (`sorting`, `ready`, `failed`, ...) → already there; report "already there".
 
 ### 4. Upload each missing meeting
 
@@ -74,7 +74,7 @@ Handle one meeting at a time.
 2. **Build `started_at`** from `date_text` plus the start time in `time_text`, as UTC in ISO 8601. Example:
    `November 14, 2026` and `03:17 AM - 03:22 AM UTC` → `2026-11-14T03:17:00Z`.
 3. **Split the lines** in order into parts of at most 150 lines. Parts are numbered from 0. Leave out only lines
-   whose `text` is empty; they carry nothing and the app refuses them.
+   whose `text` is empty or missing; they carry nothing and the app refuses them.
 4. **Send each part** with `import_meeting`:
    - every part: `ref` = the `project_uuid`, `part` = its number, `turns` = its lines, each as
      `{"t", "speaker", "kind", "text"}` with values copied exactly;
@@ -96,7 +96,6 @@ Handle one meeting at a time.
 
 **Skip a meeting, without sending `last`, when:**
 - the full transcript cannot be fetched or held, e.g. it is too long for this session;
-- a line's `text` is over 5,000 characters (the app accepts at most 5,000; never cut or split it);
 - the format differs in a way whose meaning is not obvious (see Format drift).
 
 ### 5. Report
