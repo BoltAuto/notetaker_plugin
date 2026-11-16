@@ -1,5 +1,8 @@
 import importlib.util
 import json
+import os
+import subprocess
+import sys
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -139,8 +142,6 @@ def test_401_and_network_error_messages(tmp_path, app):
     write_cfg(cfg, url, 'wa_revoked')
     [r] = relay.handle(call('ask'), cfg)
     assert r['result']['isError'] is True and text(r) == 'Key rejected; run the connect step again'
-    [r] = relay.handle(list_req(), cfg)
-    assert r['error']['message'] == 'Key rejected; run the connect step again'
     write_cfg(cfg, 'http://127.0.0.1:1')
     [r] = relay.handle(call('ask'), cfg)
     assert r['result']['isError'] is True and 'http://127.0.0.1:1' in text(r)
@@ -175,3 +176,34 @@ def test_key_never_in_output(tmp_path, app):
     cfg.write_text('garbage')
     outs += relay.handle(call('ask'), cfg)
     assert len(outs) >= 5 and key not in json.dumps(outs)
+
+
+def test_failures_still_list_connect_so_the_key_can_be_replaced(tmp_path, app):
+    url, _ = app
+    cfg = tmp_path / 'c.json'
+    cfg.write_text('{not json')
+    init = {'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {'protocolVersion': '2025-06-18'}}
+    [i] = relay.handle(init, cfg)
+    assert i['result']['capabilities']['tools']['listChanged'] is True
+    [r] = relay.handle(list_req(), cfg)
+    assert [t['name'] for t in r['result']['tools']] == ['connect']
+    write_cfg(cfg, url, 'wa_revoked')
+    [r] = relay.handle(list_req(), cfg)
+    assert [t['name'] for t in r['result']['tools']] == ['connect']
+    [i] = relay.handle(init, cfg)
+    assert 'result' in i
+    write_cfg(cfg, 'http://127.0.0.1:1')
+    [r] = relay.handle(list_req(), cfg)
+    assert [t['name'] for t in r['result']['tools']] == ['connect']
+
+
+def test_utf8_survives_stdin_as_a_subprocess(tmp_path, app):
+    url, seen = app
+    cfg = tmp_path / 'c.json'
+    write_cfg(cfg, url)
+    s = '“hi” — Åsa'
+    line = json.dumps(call('ask', {'q': s}), ensure_ascii=False) + '\n'
+    r = subprocess.run([sys.executable, str(RELAY)], input=line.encode('utf-8'), capture_output=True, timeout=30,
+                       env={**os.environ, 'WORKASSISTANT_CONFIG': str(cfg)})
+    assert json.loads(r.stdout)['result']['content'][0]['text'] == 'ok'
+    assert seen[-1]['body']['params']['arguments']['q'] == s

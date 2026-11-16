@@ -127,6 +127,21 @@ def connect(msg: dict, config_path: Path) -> list[dict]:
             {'jsonrpc': '2.0', 'method': 'notifications/tools/list_changed'}]
 
 
+def answer_locally(msg: dict, problem: str) -> list[dict]:
+    """Answer without the app: only `connect` is available. `problem` is the text for any other tool call."""
+    method, id_ = msg.get('method'), msg['id']
+    if method == 'initialize':
+        version = (msg.get('params') or {}).get('protocolVersion', '2025-06-18')
+        return [{'jsonrpc': '2.0', 'id': id_, 'result': {
+            'protocolVersion': version, 'capabilities': {'tools': {'listChanged': True}},
+            'serverInfo': {'name': 'workassistant-relay', 'version': '1'}}}]
+    if method == 'tools/list':
+        return [{'jsonrpc': '2.0', 'id': id_, 'result': {'tools': [CONNECT_TOOL]}}]
+    if method == 'ping':
+        return [{'jsonrpc': '2.0', 'id': id_, 'result': {}}]
+    return fail(msg, problem)
+
+
 def handle(msg: dict, config_path: Path) -> list[dict]:
     """Return the messages to write to stdout for one incoming message."""
     if not isinstance(msg, dict):
@@ -135,26 +150,19 @@ def handle(msg: dict, config_path: Path) -> list[dict]:
     is_request = 'id' in msg and method is not None
     if method == 'tools/call' and (msg.get('params') or {}).get('name') == 'connect':
         return connect(msg, config_path)
+    problem = None
     try:
         cfg = load_config(config_path)
     except RelayError as e:
-        return fail(msg, str(e))
+        cfg, problem = None, str(e)
     if cfg is None:
-        if not is_request:
-            return []
-        if method == 'initialize':
-            version = (msg.get('params') or {}).get('protocolVersion', '2025-06-18')
-            return [{'jsonrpc': '2.0', 'id': msg['id'], 'result': {
-                'protocolVersion': version, 'capabilities': {'tools': {'listChanged': True}},
-                'serverInfo': {'name': 'workassistant-relay', 'version': '1'}}}]
-        if method == 'tools/list':
-            return [{'jsonrpc': '2.0', 'id': msg['id'], 'result': {'tools': [CONNECT_TOOL]}}]
-        if method == 'ping':
-            return [{'jsonrpc': '2.0', 'id': msg['id'], 'result': {}}]
-        return fail(msg, NOT_CONNECTED)
+        return answer_locally(msg, problem or NOT_CONNECTED) if is_request else (log(problem) or [] if problem else [])
     try:
         reply = post(cfg['url'], cfg['key'], msg)
     except RelayError as e:
+        if method in ('initialize', 'tools/list'):
+            log(str(e))  # still answer, so connect stays available to fix the problem
+            return answer_locally(msg, str(e))
         return fail(msg, str(e))
     if not is_request or reply is None:
         return []
@@ -168,6 +176,8 @@ def handle(msg: dict, config_path: Path) -> list[dict]:
 
 
 def main() -> None:
+    sys.stdin.reconfigure(encoding='utf-8')
+    sys.stdout.reconfigure(encoding='utf-8')
     config_path = default_config_path()
     for line in sys.stdin:
         line = line.strip()
