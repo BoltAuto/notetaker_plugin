@@ -1,4 +1,5 @@
 {
   "name": "workassistant",
-  "description": "Sync Claude Meetings into workAssistant"
+  "description": "Sync Claude Meetings into workAssistant",
+  "author": {"name": "BoltAuto"}
 }
